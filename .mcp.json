@@ -1,0 +1,31 @@
+{
+  "_readme": "Project-level MCP config. Safe to commit — no secrets. Only includes servers that are useful per-project and need no API keys. GitHub and any token-based servers live in the global user config (~/.claude.json / opencode.json) and are available automatically.",
+
+  "mcpServers": {
+
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "."
+      ]
+    },
+
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"]
+    },
+
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
+    }
+
+  }
+}
