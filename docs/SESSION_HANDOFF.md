@@ -1,31 +1,45 @@
 # Session Handoff — sudoku-lab
 
 **Date:** 2026-06-08
-**Last completed version:** v0.0
-**Next target version:** v0.1
-**Version acceptance criterion:**
-> TBD — add a backtracking solver that passes `pytest tests/ -v`
+**Last completed version:** v0.1 ✓ BUILT (awaiting audit)
+**Next target version:** v0.2
+**Version acceptance criterion:** TBD — define before next session
 
 ---
 
-## What was done last session
+## What was done in v0.0
 
-**v0.0 — scaffold + Sudoku core class**
+- pyproject.toml + environment.yml (all deps, hatchling build)
+- src/sudoku/ package skeleton (9 modules)
+- src/sudoku/core/sudoku.py — Sudoku class (board, validate, display, serialise)
+- src/sudoku/solvers/base.py — abstract BaseSolver with benchmark()
+- tests/test_core.py (7 tests) + tests/test_base_solver.py (4 tests)
+- LICENSE (MIT), README.md
+- docs/AUDIT_PROMPTS.md configured for tooling scripts
 
-- Created `pyproject.toml` (hatchling, all dependencies)
-- Created `environment.yml` (conda-forge channels, pip extras)
-- Created package skeleton: `src/sudoku/{core,solvers,game,generator,montecarlo,ml,dl,benchmark,viz}/`
-- Implemented `src/sudoku/core/sudoku.py` — `Sudoku` class (9×9 numpy board, rich display, validate, is_solved, get/set_cell, copy, to_string, from_string, __repr__)
-- Implemented `src/sudoku/solvers/base.py` — abstract `BaseSolver` with `benchmark()` helper
-- Wired up `__init__.py` exports at core, solvers, and top-level package
-- Added `tests/test_core.py` — 7 tests, all pass
-- Added `README.md` with API table and install instructions
+Audit: 87.0/100 avg (A1:81, A2:87, A3:93) — PASS
 
-All acceptance criteria met:
-```
-python -c "from sudoku import Sudoku; s = Sudoku(); s.display()"  # ✓
-pytest tests/ -v  # 7 passed
-```
+---
+
+## What was done in v0.1
+
+- Added ipympl to pyproject.toml and environment.yml
+- src/sudoku/game/presets.py — EASY (35 givens), MEDIUM (30 givens, Wikipedia), HARD (20 givens, Inkala) + PRESET_MAP
+- src/sudoku/game/state.py — GameState dataclass with from_string, move_cursor, fill_cell, clear_cell, get_conflicts, check_win
+- src/sudoku/game/renderer.py — pure draw_board() function (matplotlib, Agg-safe)
+- src/sudoku/game/sudoku_game.py — SudokuGame controller (key/click events, win overlay)
+- src/sudoku/game/__main__.py — CLI entry point
+- src/sudoku/game/__init__.py — public API export
+- notebooks/00_game.ipynb — interactive Jupyter notebook (ipympl widget)
+- tests/test_game.py — 7 headless tests (18 total, all pass)
+
+Key implementation decisions:
+- Coordinate system: y-axis upward, row 0 at top → cell (r,c) at y_bot = 8-r
+- Conflict priority: conflict > selected > given > default (lightsalmon > gold > lightgray > white)
+- given cells are immutable; fill/clear are no-ops on them
+- check_win() sets state.solved = True as a side-effect
+
+Audit: pending — run audit agents before closing v0.1
 
 ---
 
@@ -37,36 +51,14 @@ None.
 
 ## Next session task list
 
-Implement a backtracking solver as the first concrete `BaseSolver`:
+1. Run audit (security-auditor → parity-auditor → quality-auditor)
+2. Fix any audit findings
+3. Define v0.2 acceptance criterion (suggest: backtracking solver — `python -m sudoku.solve <puzzle>` solves a puzzle in < 1s and prints the solution)
+4. Build v0.2
 
-1. `src/sudoku/solvers/backtracking.py` — `BacktrackingSolver(BaseSolver)`
-   - Classic depth-first backtrack with MRV (minimum remaining values) heuristic
-   - `name` property returns `"backtracking"`
-   - `solve(puzzle) -> Sudoku` raises `ValueError` if unsolvable
-
-2. Update `src/sudoku/solvers/__init__.py` to export `BacktrackingSolver`
-
-3. Update `src/sudoku/__init__.py` to export `BacktrackingSolver`
-
-4. `tests/test_backtracking.py` — tests:
-   - Solves a known easy puzzle correctly
-   - Solves a known hard puzzle correctly
-   - Returns a board that passes `is_solved()`
-   - Raises on an unsolvable puzzle
-   - `benchmark()` returns correct keys and a solve_rate of 1.0
-
-Acceptance criterion:
-```
-pytest tests/ -v  # all tests pass including new backtracking tests
-```
-
----
-
-## Architecture decisions
-
-- Package layout: `src/sudoku/` imported by notebooks (not standalone scripts in notebooks)
-- Board representation: 9×9 numpy int array, 0 = empty cell
-- Solver interface: all solvers inherit BaseSolver, implement solve(board) → board
-- Data format: CSV with 81-char string (row-major, 0 = empty) + difficulty label
-- QMC: two approaches — PIMC (Suzuki-Trotter) and SQA (transverse-field Potts)
-- DL training: shared trainer with AMP + gradient clipping + early stopping
+Suggested v0.2 scope (backtracking solver):
+- src/sudoku/solvers/backtracking.py — BacktrackingSolver(BaseSolver) using recursive DFS with constraint propagation
+- src/sudoku/solvers/__init__.py — export BacktrackingSolver
+- src/sudoku/solve/__main__.py — CLI: read puzzle string arg, solve, print solution
+- tests/test_backtracking.py — solves easy/medium/hard presets, benchmark passes
+- Update notebooks/ with a solver demo notebook

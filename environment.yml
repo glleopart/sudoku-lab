@@ -17,6 +17,7 @@ dependencies:
     - PuLP
     - neat-python
     - plotly
+    - ipympl
     - pytest
     - ruff
     - -e .

@@ -17,6 +17,7 @@ dependencies = [
     "matplotlib",
     "seaborn",
     "plotly",
+    "ipympl",
 ]
 
 [project.optional-dependencies]
