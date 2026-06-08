@@ -24,11 +24,14 @@ class BaseSolver(ABC):
         for puzzle in puzzles:
             for _ in range(n_runs):
                 t0 = time.perf_counter()
-                result = self.solve(puzzle.copy())
-                elapsed = time.perf_counter() - t0
+                try:
+                    result = self.solve(puzzle.copy())
+                    elapsed = time.perf_counter() - t0
+                    if result.is_solved():
+                        solved += 1
+                except ValueError:
+                    elapsed = time.perf_counter() - t0
                 times.append(elapsed)
-                if result.is_solved():
-                    solved += 1
 
         total = len(puzzles) * n_runs
         return {

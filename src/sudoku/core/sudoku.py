@@ -13,6 +13,8 @@ class Sudoku:
             arr = np.asarray(board, dtype=int)
             if arr.shape != (9, 9):
                 raise ValueError(f"Board must be 9×9, got {arr.shape}")
+            if not np.all((arr >= 0) & (arr <= 9)):
+                raise ValueError("All cell values must be 0–9")
             self._board = arr.copy()
 
     # ------------------------------------------------------------------

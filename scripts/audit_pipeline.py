@@ -26,8 +26,11 @@ try:
     import anthropic
     from tenacity import retry, stop_after_attempt, wait_exponential
 except ImportError:
-    print("ERROR: Missing dependencies. Run: pip install anthropic tenacity")
-    sys.exit(1)
+    import subprocess
+    print("Installing missing dependencies...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "anthropic", "tenacity", "-q"])
+    import anthropic
+    from tenacity import retry, stop_after_attempt, wait_exponential
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
@@ -35,8 +38,9 @@ PASS_THRESHOLD = 85          # average score required to pass
 MIN_AGENT_SCORE = 70         # each individual agent must score at least this
 MAX_FILE_CHARS = 8_000       # max chars per source file sent to agents
 MAX_FILES = 40               # max number of source files included
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 4096
+USE_API = False  # set by --api flag
 
 # File extensions to include in code collection
 CODE_EXTENSIONS = {
@@ -249,9 +253,31 @@ P3 (track as issues): [list]
 
 client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
 
+
+import subprocess
+
+def call_agent_cli(system: str, user_message: str, label: str) -> str:
+    """Call Claude via CLI --uses claude.ai subscription, no API credits."""
+    print(f"  Calling {label} (CLI)...", end="", flush=True)
+    import time; start = time.time()
+    combined = f"<instructions>\n{system}\n</instructions>\n\n<task>\n{user_message}\n</task>"
+    env = __import__("os").environ.copy()
+    env.pop("ANTHROPIC_API_KEY", None)
+    try:
+        result = subprocess.run(
+            ["claude", "-p", combined],
+            capture_output=True, text=True, env=env, timeout=600,
+        )
+    except FileNotFoundError:
+        print("\nERROR: claude CLI not found. Use --api flag instead.")
+        __import__("sys").exit(1)
+    elapsed = time.time() - start
+    print(f" done ({elapsed:.1f}s)")
+    return result.stdout.strip()
+
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=20))
-def call_agent(system: str, user_message: str, label: str) -> str:
-    """Call Claude with retry logic. Returns the text response."""
+def _call_agent_api(system: str, user_message: str, label: str) -> str:
+    """Call Claude API directly. Requires ANTHROPIC_API_KEY with credits."""
     print(f"  Calling {label}...", end="", flush=True)
     start = time.time()
     response = client.messages.create(
@@ -263,6 +289,14 @@ def call_agent(system: str, user_message: str, label: str) -> str:
     elapsed = time.time() - start
     print(f" done ({elapsed:.1f}s)")
     return response.content[0].text
+
+
+
+def call_agent(system: str, user_message: str, label: str) -> str:
+    """Route to API or CLI based on USE_API flag."""
+    if USE_API:
+        return _call_agent_api(system, user_message, label)
+    return call_agent_cli(system, user_message, label)
 
 
 # ── Score parsing ─────────────────────────────────────────────────────────────
@@ -379,8 +413,8 @@ def run_pipeline(manifest_path: Path, max_iterations: int, dry_run: bool):
     """Run the full 3-agent audit pipeline with retry loop."""
 
     # Validate environment
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("ERROR: ANTHROPIC_API_KEY environment variable not set.")
+    if USE_API and not os.environ.get("ANTHROPIC_API_KEY"):
+        print("ERROR: --api requires ANTHROPIC_API_KEY to be set.")
         sys.exit(1)
 
     # Collect code
@@ -513,6 +547,7 @@ def run_pipeline(manifest_path: Path, max_iterations: int, dry_run: bool):
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
+    global PASS_THRESHOLD
     parser = argparse.ArgumentParser(
         description="3-agent automated code audit pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -543,7 +578,6 @@ def main():
 
     args = parser.parse_args()
 
-    global PASS_THRESHOLD
     PASS_THRESHOLD = args.threshold
 
     manifest_path = Path(args.manifest)
