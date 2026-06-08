@@ -78,6 +78,16 @@ def test_win_detection():
     assert state.solved is True
 
 
+def test_completion_time_set_on_win():
+    state = GameState.from_string(_NEARLY_SOLVED)
+    assert state.completion_time is None
+    state.selected = (0, 2)
+    state.fill_cell(4)
+    state.check_win()
+    assert state.completion_time is not None
+    assert state.completion_time >= 0.0
+
+
 def test_clear_cell():
     state = GameState.from_string(EASY)
     # Find a non-given cell

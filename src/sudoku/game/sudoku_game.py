@@ -54,7 +54,7 @@ class SudokuGame:
         self._render()
 
     def _render(self) -> None:
-        elapsed = time.time() - self.state.start_time
+        elapsed = self.state.completion_time if self.state.solved else time.time() - self.state.start_time
         draw_board(
             self.ax,
             self.state.puzzle,

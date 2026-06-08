@@ -14,6 +14,7 @@ class GameState:
     moves: int
     start_time: float
     solved: bool
+    completion_time: float | None = None
 
     @classmethod
     def from_string(cls, s: str) -> GameState:
@@ -80,5 +81,6 @@ class GameState:
     def check_win(self) -> bool:
         if self.puzzle.is_solved():
             self.solved = True
+            self.completion_time = time.time() - self.start_time
             return True
         return False
