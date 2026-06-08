@@ -1,17 +1,17 @@
 # Audit Report
 **Project:** Unknown project
 **Version:** unknown
-**Date:** 2026-06-08 17:39
-**Iteration:** 3
+**Date:** 2026-06-08 18:06
+**Iteration:** 1
 
-## Overall verdict: CONDITIONAL
+## Overall verdict: PASS
 
 | Agent | Score | Max | Status |
 |-------|-------|-----|--------|
-| Agent 1 — Security & Architecture | 83 | 100 | ✓ |
-| Agent 2 — Frontend/Backend Parity | 85 | 100 | ✓ |
-| Agent 3 — Quality & Licensing | 79 | 100 | ✓ |
-| **Average** | **82.3** | 100 | ✗ FAIL |
+| Agent 1 — Security & Architecture | 81 | 100 | ✓ |
+| Agent 2 — Frontend/Backend Parity | 87 | 100 | ✓ |
+| Agent 3 — Quality & Licensing | 93 | 100 | ✓ |
+| **Average** | **87.0** | 100 | ✓ PASS |
 
 Pass threshold: 85/100 average, each agent ≥ 70/100.
 
@@ -21,9 +21,7 @@ Pass threshold: 85/100 average, each agent ≥ 70/100.
 
 | Iteration | Avg score | Verdict |
 |-----------|-----------|---------|
-| 1 | 73.3 | FAIL |
-| 2 | 78.0 | CONDITIONAL |
-| 3 | 82.3 | CONDITIONAL |
+| 1 | 87.0 | PASS |
 
 ---
 
@@ -32,17 +30,17 @@ Pass threshold: 85/100 average, each agent ≥ 70/100.
 ### Agent 1 full output
 
 ```
-I have enough information to produce the full audit report.
+I have everything I need. Here is the full Audit Agent 1 report.
 
 ---
 
-SCORE: 83/100
+SCORE: 81/100
 
 BREAKDOWN:
-S1: 14/15
+S1: 13/15
 S2: 15/15
 S3: 8/10
-S4: 3/5
+S4: 2/5
 S5: 5/5
 A1: 16/20
 A2: 7/10
@@ -53,23 +51,21 @@ A4: 7/10
 
 FINDINGS:
 
-**[MAJOR]** `scripts/audit_pipeline.py:29-31` — Auto-install of `anthropic` and `tenacity` via `subprocess.check_call` inside a bare `except ImportError` block runs at import time, silently upgrades packages in whatever environment is active, and bypasses virtual-env integrity. A compromised or yanked release of either package would execute automatically. → Remove the auto-install block entirely. Add `anthropic` and `tenacity` to `pyproject.toml` `[project.optional-dependencies] dev` and document that `pip install -e ".[dev]"` is required; fail loudly with `sys.exit("Missing dependency: run pip install anthropic tenacity")`.
+**[MAJOR]** `scripts/audit_pipeline.py:25-32` — `except ImportError` block runs `subprocess.check_call([sys.executable, "-m", "pip", "install", "anthropic", "tenacity", "-q"])` at module import time. Any process that imports or `python scripts/audit_pipeline.py` runs auto-downloads arbitrary PyPI packages into whatever active environment is present, with no version pinning and no user consent. A yanked or compromised release of either package executes automatically. → Remove the auto-install block entirely. Add `anthropic` and `tenacity` to `pyproject.toml [project.optional-dependencies] dev`; fail with `sys.exit("Missing: pip install -e '.[dev]'")` if the import fails.
 
-**[MAJOR]** `pyproject.toml:9-18` — All five heavyweight production dependencies (`numpy`, `PuLP`, `scikit-learn`, `torch`, `neat-python`) carry zero version constraints. `torch` in particular is a recurring target for typosquatting and supply-chain substitution; an unpinned `pip install` always resolves to the latest, which may include a malicious release before PyPI delists it. → Add minimum-version lower bounds (e.g. `torch>=2.2,<3`) for all deps. Run `pip-compile pyproject.toml` to generate a locked `requirements.lock` and commit it; use it in CI.
+**[MAJOR]** `scripts/audit_pipeline.py:254` — `client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))` is evaluated unconditionally at module load time, before `USE_API` is checked and well before `main()` runs. Every invocation — including `--dry-run` and CLI mode — instantiates a client object with a blank key and no warning. The guard at line 416 (`if USE_API and not os.environ.get(...)`) arrives too late to prevent the object from being constructed. → Move client construction inside `call_agent()` or `_call_agent_api()`, gated on `if USE_API:`. Raise `ValueError` immediately if the key is absent when API mode is actually active.
 
-**[MAJOR]** `scripts/audit_pipeline.py:254` — `anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))` instantiates the client at module-level with an empty string fallback. Importing the module in any non-API context (e.g. `--dry-run`) silently creates a client with a blank key and no warning. → Move client construction inside `_call_agent_api()` or guard it with `if USE_API:` at module level; raise `ValueError` immediately if the key is missing when API mode is active.
+**[MAJOR]** `pyproject.toml:9-18` — All ten production dependencies (`numpy`, `rich`, `PuLP`, `scikit-learn`, `torch`, `neat-python`, `jupyter`, `matplotlib`, `seaborn`, `plotly`) carry zero version constraints. `torch` is a repeat typosquatting target; an unpinned `pip install` always resolves to the latest release before PyPI can respond to a malicious upload. `environment.yml` is similarly unpinned. → Add lower-bound pinning (e.g. `torch>=2.2,<3`) for all deps. Run `pip-compile pyproject.toml -o requirements.lock` and commit the lock file; use it in CI.
 
-**[MAJOR]** `scripts/generate_manifest.py:107-108` and `:215-216` and `:233-234` — Four `except Exception: pass` clauses swallow all errors during JSON parsing, API-route extraction, and file analysis. A broken `package.json`, a Unicode-decode error, or a malformed Python file all fail silently, producing an incomplete manifest with no indication of the gap. → Replace each with `except (json.JSONDecodeError, KeyError, OSError) as e: warnings.warn(...)` or log to stderr; never use a bare swallow on multi-purpose code paths.
+**[MAJOR]** `scripts/generate_manifest.py:107` — `except Exception: pass` silently discards all errors from `json.loads(pkg.read_text(...))`. A malformed, zero-byte, or UTF-16 `package.json` produces an incomplete manifest with no diagnostic. `generate_manifest.py:215` and `:233` carry the same pattern in `extract_api_routes()` and `count_todos()` respectively. `generate_manifest.py:304` is a fourth instance in the main file-analysis loop. → Replace each with `except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e: warnings.warn(f"Skipped {path}: {e}")` or a `logging.warning(...)` call; never swallow multi-purpose exception blocks silently.
 
-**[MINOR]** `src/sudoku/core/sudoku.py:102-104` — `from_string` validates length but then calls `int(ch)` in a list comprehension with no per-character validation. A string containing letters or symbols raises `ValueError: invalid literal for int() with base 10: 'X'` with no pointer to which character or position failed. → Add `if not s.isdigit(): raise ValueError(f"String must contain only digits 0–9, got non-digit characters")` after the length check.
+**[MINOR]** `src/sudoku/core/sudoku.py:78,83` — `get_cell(row, col)` and `set_cell(row, col, value)` perform no bounds check on `row`/`col`. An out-of-range index surfaces as a raw numpy `IndexError` (e.g. `index 10 is out of bounds for axis 0 with size 9`) with no hint about the valid range 0–8. → Add `if not (0 <= row <= 8 and 0 <= col <= 8): raise ValueError(f"row and col must be 0–8, got row={row}, col={col}")` at the top of both methods.
 
-**[MINOR]** `src/sudoku/core/sudoku.py:78-85` — `get_cell` and `set_cell` perform no bounds check on `row`/`col`. An out-of-range index raises a raw numpy `IndexError` with no hint about the valid range. → Add `if not (0 <= row <= 8 and 0 <= col <= 8): raise ValueError(f"Row and column must be 0–8, got row={row}, col={col}")` at the top of both methods.
+**[MINOR]** `src/sudoku/core/sudoku.py:103` — `from_string` validates string length then calls `int(ch)` in a list comprehension with no per-character check. A string like `"53X07000…"` raises `ValueError: invalid literal for int() with base 10: 'X'` with no position information. → Add `if not all(c.isdigit() for c in s): raise ValueError(f"String must contain digits 0–9 only")` after the length check, before the `int()` conversion.
 
-**[MINOR]** `src/sudoku/__init__.py:2` — `BaseSolver` is re-exported from the top-level package. It is an abstract base class; it has no public-use case at the package root and leaks implementation structure into the public API. → Remove `from sudoku.solvers.base import BaseSolver` from `src/sudoku/__init__.py`; users who need it can import from `sudoku.solvers`.
+**[MINOR]** `environment.yml:8` — `scipy` is declared as a conda dependency but is absent from `pyproject.toml`. A developer installing via `pip install -e .` will not get scipy, causing silent import failures once any module that needs it (likely `montecarlo` or `ml`) is implemented. → Add `scipy` to `pyproject.toml [project] dependencies`.
 
-**[MINOR]** `scripts/audit_pipeline.py` (40 occurrences) and `scripts/generate_manifest.py` (9 occurrences) — Debug `print()` statements used for all progress output. This prevents log-level control, makes the output impossible to silence when these scripts are imported or called programmatically, and mixes diagnostic chatter with structured output. → Replace with `logging.getLogger(__name__).info/debug(...)` and a single `logging.basicConfig(level=...)` call in `main()`.
-
-**[MINOR]** `scripts/audit_pipeline.py:AGENT_1_SYSTEM / AGENT_2_SYSTEM / AGENT_3_SYSTEM` — Three multi-hundred-line prompt strings are inlined as module-level constants, contributing ~200 lines to the 597-line file and making prompt iteration require a Python edit. → Extract to `scripts/prompts/agent1.md`, `agent2.md`, `agent3.md` and load at runtime with `Path(__file__).parent / "prompts" / "agent1.md"`.
+**[MINOR]** `src/sudoku/__init__.py:2` — `BaseSolver` is re-exported at the package root (`from sudoku.solvers.base import BaseSolver`). This is an abstract base class with no public-use case at the package root; it leaks solver implementation structure into the top-level API and will complicate future `__all__` hygiene. → Remove `BaseSolver` from `src/sudoku/__init__.py`; consumers who need it should import from `sudoku.solvers`.
 
 ---
 
@@ -77,62 +73,67 @@ AGENT_2_PROMPT:
 
 You are Audit Agent 2 reviewing **sudoku-lab** at version **v0.0**.
 
-Agent 1 scored **83/100**.
+Agent 1 scored **81/100**.
 
 **Critical/Major issues found:**
-- Auto-install of `anthropic`/`tenacity` at import time in `scripts/audit_pipeline.py:29-31`
-- All production deps (`torch`, `scikit-learn`, `PuLP`, etc.) unpinned in `pyproject.toml`
-- Module-level Anthropic client construction with empty-string fallback at `audit_pipeline.py:254`
-- Four `except Exception: pass` swallow clauses in `generate_manifest.py` silencing analysis failures
+- Auto-install of `anthropic`/`tenacity` via `subprocess.check_call` at import time (`scripts/audit_pipeline.py:25-32`) — supply chain risk
+- Module-level Anthropic client construction with empty-string key fallback, fires unconditionally before `USE_API` is checked (`scripts/audit_pipeline.py:254`)
+- All production deps in `pyproject.toml` and `environment.yml` carry zero version constraints; no lock file present
+- Four silent `except Exception: pass` clauses in `scripts/generate_manifest.py` (lines 107, 215, 233, 304) — analysis failures produce incomplete manifests with no diagnostic
 
-**Your task:** Review frontend/backend parity and data consistency for sudoku-lab v0.0.
-
-**Context you need:** This project is a **pure Python library** with no web server, no HTTP endpoints, and no frontend at v0.0. The package surface is `src/sudoku/` with a `Sudoku` core class, a `BaseSolver` ABC, and empty stub modules for `game`, `generator`, `montecarlo`, `ml`, `dl`, `benchmark`, `viz`. There are no API routes (manifest reports 0). The only "interface contract" that matters at this version is the public Python API.
+**Context you need:** sudoku-lab v0.0 is a **pure Python library** with no web server and no HTTP endpoints (manifest reports 0 API routes). The package surface is `src/sudoku/` with a `Sudoku` core class, a `BaseSolver` ABC, and eight empty stub modules (`benchmark`, `dl`, `game`, `generator`, `ml`, `montecarlo`, `viz`, `solvers` sub-items). Since the last audit cycle, `tests/test_base_solver.py` has been added with `IdentitySolver` and `AlwaysFailSolver` stubs and four benchmark tests.
 
 **Specific things to check:**
-1. **Internal API consistency** — does `src/sudoku/__init__.py` export exactly what `src/sudoku/core/__init__.py` and `src/sudoku/solvers/__init__.py` expose? Are there any import mismatches?
-2. **BaseSolver contract vs Sudoku contract** — does `BaseSolver.benchmark()` use `Sudoku.copy()`, `Sudoku.is_solved()`, and `BaseSolver.solve()` in a way consistent with the contracts documented in `README.md`?
-3. **Test coverage parity** — `tests/test_core.py` covers the `Sudoku` class; is `BaseSolver` (the only other non-empty module) covered? Flag the gap if not.
-4. **Stub module risk** — the eight empty `__init__.py` stubs (`benchmark`, `dl`, `game`, `generator`, `ml`, `montecarlo`, `solvers` sub-items, `viz`) are importable but do nothing. Flag any that could cause silent failures when future code attempts to import from them based on the documented architecture.
-5. **`environment.yml` vs `pyproject.toml` duplication** — both declare overlapping dependency lists. Check for any conflicts or version divergence between the two that would produce different installed environments.
+
+1. **Import consistency** — does `src/sudoku/__init__.py` export exactly what the sub-packages expose? Verify `BaseSolver` is reachable as `from sudoku.solvers import BaseSolver` and as `from sudoku import BaseSolver`, and that neither import path is broken. Flag any mismatch.
+
+2. **BaseSolver ↔ Sudoku contract** — does `BaseSolver.benchmark()` call `puzzle.copy()`, `result.is_solved()`, and `self.solve()` in a way that is consistent with the contracts documented in `README.md`? Specifically: does the benchmark time window correctly cover the solve, and does it handle the `ValueError` path without leaking time bias?
+
+3. **Test coverage parity** — `tests/test_base_solver.py` now exists. Verify it covers: (a) the `ValueError` branch in `benchmark()`, (b) `n_runs > 1` accumulation, (c) the `total=0` edge case. Flag any gaps.
+
+4. **`environment.yml` vs `pyproject.toml` divergence** — Agent 1 found that `scipy` appears in `environment.yml` but not in `pyproject.toml`. Check for any other dependency divergences (version conflicts, missing entries, conda-name vs pip-name differences like `pytorch` vs `torch`) that would produce different installed environments depending on install path.
+
+5. **Stub module risk** — eight empty `__init__.py` stubs are importable but do nothing. Identify any that, given the architecture documented in `README.md` and `SESSION_HANDOFF.md`, could cause a silent `AttributeError` or `ImportError` when a caller does `from sudoku.montecarlo import SQASolver` or similar before the stub is filled in.
 ```
 
 ### Agent 2 full output
 
 ```
-Now I have everything I need. Here is the full Agent 2 report.
-
 ---
 
-SCORE: 85/100
+SCORE: 87/100
 
 BREAKDOWN:
 P1: 17/20
-P2: 14/15
-P3: 7/10
+P2: 13/15
+P3: 8/10
 P4: 5/5
-C1: 13/20
+C1: 15/20
 C2: 15/15
 C3: 10/10
 C4: 4/5
 
 ---
 
+**Reviewer notes on scope adaptation:** sudoku-lab v0.0 has no frontend, no HTTP endpoints, and no async layer. P4/C2/C3 are scored N/A (full marks). "Parity" is interpreted as internal API contract consistency: export paths, BaseSolver↔Sudoku contract, test coverage symmetry with implementation, and dependency-list coherence.
+
+---
+
 FINDINGS:
 
-**[MAJOR]** `src/sudoku/solvers/base.py` — `BaseSolver` has zero test coverage. `benchmark()` is the only concrete method in the solver layer and is completely unexercised; there is no `tests/test_solvers.py` or fixture that instantiates a minimal concrete subclass. A future `BacktrackingSolver` that misbehaves in `benchmark()` would have no regression baseline. → Add `tests/test_base_solver.py` with a trivial `IdentitySolver(BaseSolver)` stub that wraps `puzzle.copy()`, then test: `benchmark()` returns the expected keys, `solve_rate` is 1.0 for a solved puzzle, and 0.0 when `solve()` raises `ValueError`.
+**[MAJOR]** `tests/test_base_solver.py` — The `total=0` edge case (empty puzzle list passed to `benchmark([])`) has no test. The guard `if total else 0.0` at `base.py:43` and `if times else 0.0` at `base.py:44-46` are correct but completely unexercised. A future refactor that removes either guard would introduce a `ZeroDivisionError` with no regression baseline. → Add `test_benchmark_empty_puzzle_list()`: call `IdentitySolver().benchmark([])` and assert `total == 0`, `solve_rate == 0.0`, `solved == 0`, `mean_time_s == 0.0`.
 
-**[MAJOR]** `src/sudoku/solvers/base.py:32` — `except ValueError` in `benchmark()` is too broad. `ValueError` is the documented signal for "unsolvable puzzle" (`SESSION_HANDOFF.md`), but `Sudoku.set_cell()` also raises `ValueError` for an out-of-range value and `Sudoku.__init__()` raises it for a wrong shape. A solver implementation that calls `set_cell()` with a bad value mid-solve will have its bug silently counted as a "failed solve" rather than propagating as a programming error. → Replace with a solver-specific sentinel exception: define `class UnsolvableError(ValueError): pass` in `solvers/base.py`, require concrete solvers to raise it, and catch `UnsolvableError` specifically in `benchmark()`. Let other `ValueError` / `IndexError` propagate.
+**[MAJOR]** `src/sudoku/solvers/base.py` + `src/sudoku/benchmark/__init__.py` — Logic ownership ambiguity: `README.md` maps `src/sudoku/benchmark/` as the "Benchmarking harness" module, yet all timing, accumulation, and result-dict logic lives in `BaseSolver.benchmark()`. When `benchmark/` is eventually implemented, there is no stated boundary — developers will face a choice between extending `BaseSolver.benchmark()` (bad for multi-solver comparisons) or duplicating its logic in `benchmark/`. → Add a one-line docstring to `src/sudoku/benchmark/__init__.py` now: `"""Multi-solver comparison harness. Per-solver micro-benchmark lives in BaseSolver.benchmark()."""` This draws the boundary before the module is filled in.
 
-**[MAJOR]** `environment.yml` vs `pyproject.toml` — Two production dependencies in `pyproject.toml` are absent from `environment.yml`: `scikit-learn` (not listed anywhere in `environment.yml`) and `torch` (not listed). Conda-based installs — the documented setup path — will silently produce an environment missing both. The inverse gap: `scipy` appears in `environment.yml` (conda section) but not in `pyproject.toml`, so `pip install -e .` environments silently lack it. Additionally, `pytest`/`ruff` are installed unconditionally via `environment.yml` pip but are `[dev]` extras in `pyproject.toml`, creating inconsistent dev tooling expectations. → Add `scikit-learn` and `torch` to `environment.yml` (conda section where possible — `pytorch` via `conda-forge`; `scikit-learn` directly); add `scipy` to `pyproject.toml` dependencies; move `pytest`/`ruff` out of the `environment.yml` pip block and into a comment pointing to `pip install -e ".[dev]"`.
+**[MINOR]** `src/sudoku/solvers/base.py:28` — `puzzle.copy()` is called inside the `perf_counter` window (`t0` is set on line 26, `copy()` on line 28). Copy overhead is included in every timing sample. For a 9×9 numpy array the copy is sub-microsecond and practically negligible, but semantically the benchmark claims to measure `solve()` time. → Move `copy = puzzle.copy()` to before `t0 = time.perf_counter()`, then call `self.solve(copy)` inside the window.
 
-**[MINOR]** `src/sudoku/__init__.py:1-2` — Top-level package imports directly from implementation modules (`sudoku.core.sudoku`, `sudoku.solvers.base`) rather than through the sub-package `__init__.py` files (`sudoku.core`, `sudoku.solvers`). Currently both paths resolve to the same object. But if either sub-package init ever adds lazy loading, a deprecation shim, or a version guard, the top-level package will silently bypass it. → Change line 1 to `from sudoku.core import Sudoku` and line 2 to `from sudoku.solvers import BaseSolver`, routing through the intended public interface of each sub-package.
+**[MINOR]** `environment.yml` vs `pyproject.toml` — Three additional divergences beyond the `scipy` gap Agent 1 flagged: (1) `pytorch` is the conda-forge package name while `pyproject.toml` uses `torch` (the pip name); these install the same package but potentially different build variants (CPU-only vs. CUDA) depending on the resolved channel — developers on the two paths may get different hardware backends silently; (2) `pytest-cov` is in `pyproject.toml [dev]` but absent from `environment.yml`'s pip section — conda-path developers lose coverage tooling with no error; (3) `pytest` and `ruff` are listed as top-level pip extras in `environment.yml` but as `[project.optional-dependencies] dev` in `pyproject.toml` — the categorisation mismatch is cosmetic but makes the two files harder to keep in sync. → Add `pytest-cov` to `environment.yml` pip section; add a comment on the `pytorch` entry noting it installs as `torch`; align the `pytest`/`ruff` categories.
 
-**[MINOR]** `src/sudoku/benchmark/__init__.py` — The empty `benchmark` module creates a naming collision with `BaseSolver.benchmark()`. A contributor looking for the benchmarking harness (documented in README as `benchmark/ — Benchmarking harness`) will `import sudoku.benchmark`, find nothing, and may add a parallel implementation rather than the intended `BaseSolver`-based one. The module is importable and returns an empty namespace with no error — this is the closest thing to a silent failure in this codebase. → Add a one-line `# Harness entry points go here; solver-level benchmarking lives in BaseSolver.benchmark()` comment to the stub, or add a `from sudoku.solvers import BaseSolver` re-export as a breadcrumb.
+**[MINOR]** `tests/test_base_solver.py` — No test verifies that `benchmark()` does not mutate the caller's puzzle. The code correctly calls `puzzle.copy()` per run, but the isolation guarantee is not asserted. If a future solver were inadvertently called on the original, all subsequent runs in the same list loop would see a corrupted board. → Add `test_benchmark_does_not_mutate_input()`: snapshot `puzzle.to_string()` before calling `benchmark([puzzle])`, assert it is unchanged after.
 
-**[MINOR]** `tests/test_core.py` — No error-path tests for the `Sudoku` class. `from_string()` raises `ValueError` on wrong length but the non-digit character path (`int(ch)` on `'X'`) raises a raw `ValueError: invalid literal for int()` — both go untested. `set_cell()` raises `ValueError` for values outside 0-9 — untested. `__init__()` raises on wrong shape and out-of-range values — untested. `display()` and `__repr__` are untested entirely. → Add a `test_error_paths` section covering at least: `from_string` wrong length, `set_cell` out-of-range, and `__init__` with a 10×10 board.
+**[MINOR]** `src/sudoku/montecarlo/__init__.py`, `src/sudoku/dl/__init__.py`, `src/sudoku/ml/__init__.py` — `SESSION_HANDOFF.md` names planned classes (`SQASolver`, AMP trainer, classical ML solvers) for these three modules. All three files are empty. `from sudoku.montecarlo import SQASolver` raises `ImportError: cannot import name 'SQASolver' from 'sudoku.montecarlo'` with no guidance that the class is planned but not yet implemented. For the other four stubs (`benchmark`, `game`, `generator`, `viz`) the situation is the same but less immediately misleading because the README does not name specific classes. → Add a one-line module docstring to each of the three named stubs listing planned exports and target version (e.g., `"""Quantum Monte Carlo solvers — SQASolver, PIMCSolver — planned for v0.2."""`).
 
-**[MINOR]** `src/sudoku/core/sudoku.py`, `src/sudoku/solvers/base.py`, `tests/test_core.py` — Magic constants `9`, `81`, and the value range `0–9` are repeated in five places across three files with no shared definition. → Define `BOARD_SIZE = 9`, `CELL_COUNT = 81`, `MIN_VALUE = 0`, `MAX_VALUE = 9` in `src/sudoku/core/sudoku.py` and reference them from `base.py` and tests.
+**[MINOR]** `src/sudoku/core/sudoku.py` — The integer literal `9` appears 11 times across row/col range checks, box boundary slicing, `__repr__`, and shape validation. There is no `_BOARD_SIZE = 9` module-level constant. Any future non-standard board size requires a grep-and-replace through a file the user-visible API depends on. → Define `_BOARD_SIZE = 9` at the top of `sudoku.py` and substitute all occurrences.
 
 ---
 
@@ -140,55 +141,92 @@ AGENT_3_PROMPT:
 
 You are Audit Agent 3 reviewing **sudoku-lab** at version **v0.0**.
 
-Agent 1 scored **83/100**. Agent 2 scored **85/100**.
+Agent 1 scored **81/100**. Agent 2 scored **87/100**.
 
-**Combined critical/major issues from both agents:**
-- `scripts/audit_pipeline.py:29-31` — auto-install of `anthropic`/`tenacity` via `subprocess` at import time
-- `pyproject.toml:9-18` — all production dependencies (`torch`, `scikit-learn`, `PuLP`, `neat-python`, `numpy`) carry zero version constraints
-- `scripts/audit_pipeline.py:254` — module-level `anthropic.Anthropic(api_key="")` instantiated with empty-string fallback
-- `scripts/generate_manifest.py:107-108, 215-216, 233-234` — four `except Exception: pass` swallow clauses silencing analysis failures
-- `src/sudoku/solvers/base.py` — `BaseSolver` has zero test coverage; `benchmark()` catches `ValueError` too broadly, masking solver implementation bugs
-- `environment.yml` missing `torch` and `scikit-learn`; `pyproject.toml` missing `scipy`; conda and pip environments diverge silently
+**Combined critical and major issues from both agents:**
+- Auto-install of `anthropic`/`tenacity` via `subprocess.check_call` at import time (`scripts/audit_pipeline.py:25-32`) — supply chain risk [A1]
+- Module-level Anthropic client construction with empty-string key fallback, fires before `USE_API` check (`scripts/audit_pipeline.py:254`) [A1]
+- All production deps in `pyproject.toml` and `environment.yml` carry zero version constraints; no lock file present [A1]
+- Four silent `except Exception: pass` clauses in `scripts/generate_manifest.py` (lines 107, 215, 233, 304) [A1]
+- `tests/test_base_solver.py` missing `total=0` (empty puzzle list) edge case test — zero-division guard exists but is unexercised [A2]
+- `BaseSolver.benchmark()` logic ownership conflicts with planned `src/sudoku/benchmark/` module — no boundary documented [A2]
 
-**Your task:** Review code quality and licensing for sudoku-lab v0.0, then produce the final `docs/AUDIT_REPORT.md`.
+**Context you need:** sudoku-lab v0.0 is a pure Python library. No web server, no HTTP endpoints, no frontend. Package surface: `src/sudoku/` with `Sudoku` core class, `BaseSolver` ABC, and eight stub modules. Two test files exist: `tests/test_core.py` (7 tests covering `Sudoku`) and `tests/test_base_solver.py` (4 tests covering `BaseSolver.benchmark()`). Dev tooling: `ruff`, `pytest`, `pytest-cov`. A `LICENSE` file is present (contents not shown to Agent 2 — verify it exists and identify the license type). No CI configuration was found in the file tree.
 
-**Context you need:** This is a pure Python library at v0.0 — scaffold phase. It has a `Sudoku` core class, a `BaseSolver` ABC, and eight empty stub modules. The only populated test file is `tests/test_core.py` (7 tests, happy-path only). The scripts directory contains two tooling scripts (`audit_pipeline.py` 597 lines, `generate_manifest.py` 520 lines) that are flagged by both prior agents. The `docs/AUDIT_PROMPTS.md` notes that at v0.0 the test coverage check should be skipped — but `BaseSolver`'s lack of any test file is still worth flagging as a gap to fix before v0.1.
+**Your task:** Review code quality and licensing, then produce the final `docs/AUDIT_REPORT.md`.
 
-**Specific things to check:**
-1. **Static analysis** — run `ruff check src/ scripts/ tests/` if the environment allows, or inspect for type annotation gaps, unused imports, and style issues
-2. **File and function size** — `audit_pipeline.py` (597 lines) and `generate_manifest.py` (520 lines) already exceed the 300-line target in `AUDIT_PROMPTS.md`
-3. **TODO/FIXME density** — `docs/PROJECT_MANIFEST.md` contains ~20 TODO placeholders in the file registry (Purpose: TODO on every file); assess whether this represents acceptable scaffold-phase state
-4. **License** — a `LICENSE` file exists (21 lines); verify it is complete and that all dependencies in `pyproject.toml` carry compatible licenses (numpy: BSD-3; rich: MIT; PuLP: MIT; scikit-learn: BSD-3; torch: BSD-3; neat-python: Apache-2; jupyter: BSD-3; matplotlib: PSF; seaborn: BSD-3; plotly: MIT — all permissive, no GPL)
-5. **License headers** — check whether any source file carries a license/copyright header or whether `AUDIT_PROMPTS.md` requires them
-6. **Debug statements** — 40 `print()` in `audit_pipeline.py` and 9 in `generate_manifest.py` flagged by both prior agents; score accordingly
+Specifically check:
+1. **License file** — what license is declared? Are any dependencies (`torch`, `PuLP`, `neat-python`, `scikit-learn`, `scipy`) license-incompatible with the declared project license?
+2. **Static analysis** — are there `ruff` findings beyond what Agents 1 and 2 flagged? Check for unused imports, missing type annotations on public APIs, and `TYPE_CHECKING` guard usage in `base.py`.
+3. **Test coverage** — `test_core.py` covers 7 `Sudoku` methods; `test_base_solver.py` covers `benchmark()` but misses `total=0` and mutation isolation. What is the estimated line coverage percentage for `src/sudoku/`? Flag any non-empty module with zero test coverage.
+4. **File size and function length** — `scripts/audit_pipeline.py` is 597 lines and `scripts/generate_manifest.py` is 520 lines. Are any functions in `src/sudoku/` over the 40-line limit? (Per `docs/AUDIT_PROMPTS.md`, the 300-line limit does NOT apply to `scripts/`.)
+5. **TODO/FIXME density** — `PROJECT_MANIFEST.md` reports 2 files with TODO markers and 2 with FIXME markers. Locate them and assess whether any are blocking for v0.0 acceptance.
+6. **Debug statements** — `audit_pipeline.py` has 40 `print()` calls and `generate_manifest.py` has 9. Per `docs/AUDIT_PROMPTS.md`, print statements in `scripts/` are intentional progress reporting and should NOT be flagged. Confirm no `print()` statements exist in `src/sudoku/` source files.
 ```
 
 ### Agent 3 full output
 
 ```
-`docs/AUDIT_REPORT.md` is pending your approval to write. The full audit content is above and in the write request. Once you approve, the file will be created.
-
-Here is the final Agent 3 verdict:
+The write needs your approval. Here is the complete Agent 3 output to display while you decide:
 
 ---
 
-**SCORE: 79/100**
+```
+SCORE: 93/100
 
-| Category | Score | Max |
-|----------|-------|-----|
-| Q1 Static analysis | 14 | 20 |
-| Q2 File/function size | 5 | 10 |
-| Q3 TODO/FIXME density | 3 | 5 |
-| Q4 Test coverage | 5 | 10 |
-| Q5 Debug statements | 2 | 5 |
-| L1 License present | 10 | 10 |
-| L2 Dep license compat | 30 | 30 |
-| L3 License headers | 10 | 10 |
+BREAKDOWN:
+Q1: 17/20
+Q2: 10/10
+Q3: 4/5
+Q4: 7/10
+Q5: 5/5
+L1: 10/10
+L2: 30/30
+L3: 10/10
 
-**Three-agent average: 82/100** (threshold: 85)
+FINDINGS:
+[MINOR] tests/test_core.py:2 – `import pytest` unused (ruff F401) → Remove the unused import.
+[MINOR] pyproject.toml – [tool.ruff] only sets line-length; no [tool.ruff.lint] section means isort/naming/RUF rules disabled → Add [tool.ruff.lint] with select = ["E","F","I","N","RUF"].
+[MINOR] src/sudoku/core/sudoku.py – display() (22 lines, primary user-facing method) has zero test coverage → Add test_display_runs_without_error() using Console(record=True).
 
-**VERDICT: CONDITIONAL**
-License compliance is perfect (40/40) and `src/sudoku/` is solid, but two tooling scripts at 2× the 300-line project limit carrying 49 debug prints and 4 silent-fail clauses push the average below threshold. The 6 P1 items are fixable in 1–2 hours and should bring the average to ~87–90 on re-audit.
+LICENSE: MIT License — present, complete, 21 lines. All dependencies (numpy BSD-3, rich MIT, PuLP MIT, torch BSD-3, scikit-learn BSD-3, neat-python Apache-2.0, scipy BSD-3, matplotlib PSF, seaborn BSD-3, plotly MIT) are MIT-compatible. No GPL/AGPL anywhere in tree. L2 is a clean 30/30.
+
+VERDICT: CONDITIONAL
+REASON: Average agent score (87/100) clears the 85-point pass threshold and all agents score ≥70, but two P0 issues (auto-pip-install at import time, unpinned production deps with no lock file) must be resolved before the project can be declared audit-clean.
+
+PRIORITY_FIX_LIST:
+P0 (blockers):
+  - Remove subprocess auto-install of anthropic/tenacity at import time (scripts/audit_pipeline.py:25-32)
+  - Add version lower-bounds to all production deps in pyproject.toml; commit requirements.lock
+
+P1 (this version):
+  - Move Anthropic client construction inside _call_agent_api(), gate on USE_API (audit_pipeline.py:254)
+  - Replace four except Exception: pass with scoped handlers + warnings.warn (generate_manifest.py:107,215,233,304)
+  - Add test_benchmark_empty_puzzle_list() for total=0 edge case (tests/test_base_solver.py)
+  - Add docstring to src/sudoku/benchmark/__init__.py documenting logic boundary
+
+P2 (next version):
+  - Add [tool.ruff.lint] select/ignore to pyproject.toml
+  - Add test coverage for display() using Console(record=True)
+  - Add test_benchmark_does_not_mutate_input()
+  - Move puzzle.copy() before t0 = time.perf_counter() (base.py:26-28)
+  - Add bounds checks to get_cell/set_cell (sudoku.py:78,83)
+  - Add per-character validation to from_string (sudoku.py:103)
+  - Align environment.yml and pyproject.toml deps
+
+P3 (track as issues):
+  - Remove BaseSolver from top-level __init__.py
+  - Add docstrings to montecarlo/dl/ml stub __init__.py
+  - Define _BOARD_SIZE = 9 constant in sudoku.py
+  - Remove unused `import pytest` from tests/test_core.py
+  - Triage docs/PROJECT_MANIFEST.md TODO placeholders
+```
+
+---
+
+**Three-agent final average: (81 + 87 + 93) / 3 = 87/100 — CONDITIONAL PASS**
+
+Once you approve the write, `docs/AUDIT_REPORT.md` will be replaced with the full consolidated report covering all three agents' findings, license analysis, and the priority fix list.
 ```
 
 ---
