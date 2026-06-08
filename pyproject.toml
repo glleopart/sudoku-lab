@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sudoku-lab"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "rich",
+    "PuLP",
+    "scikit-learn",
+    "torch",
+    "neat-python",
+    "jupyter",
+    "matplotlib",
+    "seaborn",
+    "plotly",
+    "pytest",
+    "pytest-cov",
+    "ruff",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sudoku"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88

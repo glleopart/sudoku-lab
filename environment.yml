@@ -1,0 +1,20 @@
+name: sudoku-lab
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - scipy
+  - matplotlib
+  - seaborn
+  - jupyter
+  - pip
+  - pip:
+    - rich
+    - PuLP
+    - neat-python
+    - plotly
+    - pytest
+    - ruff
+    - -e .
