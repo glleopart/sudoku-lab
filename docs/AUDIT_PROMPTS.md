@@ -130,3 +130,14 @@ Agent 2 should additionally verify:
 | v0.1 | No frontend yet — skip parity check (Agent 2 score N/A) |
 | v0.2+ | All checks apply |
 | beta | Raise threshold to 90; check README completeness |
+
+---
+
+## sudoku-lab specific rules
+
+### scripts/ directory
+`scripts/audit_pipeline.py` and `scripts/generate_manifest.py` are development
+infrastructure tools, not part of the `sudoku` package. Agents should:
+- NOT apply the 300-line file limit to files in scripts/
+- NOT flag print() statements in scripts/ as debug output (they are intentional progress reporting)
+- DO flag silent except/pass clauses in scripts/ as these affect correctness
