@@ -1,4 +1,4 @@
 from sudoku.core import Sudoku
-from sudoku.solvers import BaseSolver
+from sudoku.solvers import BacktrackingSolver, BaseSolver
 
-__all__ = ["Sudoku", "BaseSolver"]
+__all__ = ["Sudoku", "BaseSolver", "BacktrackingSolver"]

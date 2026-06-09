@@ -92,6 +92,9 @@ class Sudoku:
     def copy(self) -> "Sudoku":
         return Sudoku(self._board)
 
+    def to_array(self) -> np.ndarray:
+        return self._board.copy()
+
     def to_string(self) -> str:
         return "".join(str(v) for v in self._board.flatten())
 

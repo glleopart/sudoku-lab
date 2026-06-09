@@ -1,8 +1,8 @@
 # Session Handoff — sudoku-lab
 
-**Date:** 2026-06-08
-**Last completed version:** v0.1 ✓ BUILT (awaiting audit)
-**Next target version:** v0.2
+**Date:** 2026-06-09
+**Last completed version:** v0.2 ✓ BUILT (awaiting audit)
+**Next target version:** v0.3
 **Version acceptance criterion:** TBD — define before next session
 
 ---
@@ -39,7 +39,31 @@ Key implementation decisions:
 - given cells are immutable; fill/clear are no-ops on them
 - check_win() sets state.solved = True as a side-effect
 
-Audit: pending — run audit agents before closing v0.1
+Audit: 87.3/100 avg — PASS (committed c74aa29)
+
+---
+
+## What was done in v0.2
+
+- src/sudoku/solvers/base.py — added UnsolvableError(ValueError), changed benchmark() to catch UnsolvableError, added __all__
+- src/sudoku/core/sudoku.py — added to_array() → np.ndarray
+- src/sudoku/solvers/backtracking.py — BacktrackingSolver with MRV heuristic
+- src/sudoku/solvers/__init__.py — exports BacktrackingSolver
+- src/sudoku/__init__.py — exports BacktrackingSolver
+- src/sudoku/solve/__init__.py — empty package
+- src/sudoku/solve/__main__.py — CLI: python -m sudoku.solve [easy|medium|hard|<81-char>]
+- tests/test_backtracking.py — 7 new tests (26 total, all pass)
+- tests/test_base_solver.py — updated AlwaysFailSolver to raise UnsolvableError
+- notebooks/01_backtracking.ipynb — solve all presets + benchmark DataFrame
+
+Key implementation decisions:
+- MRV (minimum remaining values / fail-first) heuristic selects most-constrained empty cell at each step
+- UNSOLVABLE test fixture uses a board where cell (0,0) immediately has 0 candidates (not the naive "119..." board which would recurse deeply)
+- benchmark() narrowed from ValueError to UnsolvableError to avoid silently swallowing other exceptions
+
+Performance: EASY ~8ms, MEDIUM ~8ms, HARD ~12ms (all well under 5s acceptance criterion)
+
+Audit: pending — run audit agents before closing v0.2
 
 ---
 
@@ -51,14 +75,9 @@ None.
 
 ## Next session task list
 
-1. Run audit (security-auditor → parity-auditor → quality-auditor)
-2. Fix any audit findings
-3. Define v0.2 acceptance criterion (suggest: backtracking solver — `python -m sudoku.solve <puzzle>` solves a puzzle in < 1s and prints the solution)
-4. Build v0.2
+TBD — decide v0.3 scope after v0.2 audit passes. Candidate ideas:
+- Constraint propagation solver (AC-3 / naked singles / hidden singles) for comparison
+- Puzzle generator (remove cells from solved board while maintaining unique solution)
+- Difficulty scorer based on techniques required
 
-Suggested v0.2 scope (backtracking solver):
-- src/sudoku/solvers/backtracking.py — BacktrackingSolver(BaseSolver) using recursive DFS with constraint propagation
-- src/sudoku/solvers/__init__.py — export BacktrackingSolver
-- src/sudoku/solve/__main__.py — CLI: read puzzle string arg, solve, print solution
-- tests/test_backtracking.py — solves easy/medium/hard presets, benchmark passes
-- Update notebooks/ with a solver demo notebook
+Acceptance criterion for v0.3: TBD

@@ -2,6 +2,7 @@
 import pytest
 from sudoku import Sudoku
 from sudoku.solvers import BaseSolver
+from sudoku.solvers.base import UnsolvableError
 
 SOLVED_STR = (
     "534678912672195348198342567"
@@ -28,13 +29,13 @@ class IdentitySolver(BaseSolver):
 
 
 class AlwaysFailSolver(BaseSolver):
-    """Always raises ValueError — simulates an unsolvable puzzle."""
+    """Always raises UnsolvableError — simulates an unsolvable puzzle."""
     @property
     def name(self) -> str:
         return "always_fail"
 
     def solve(self, puzzle: Sudoku) -> Sudoku:
-        raise ValueError("No solution")
+        raise UnsolvableError("No solution")
 
 
 def test_benchmark_returns_expected_keys():

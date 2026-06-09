@@ -7,6 +7,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from sudoku.core.sudoku import Sudoku
 
+__all__ = ["BaseSolver", "UnsolvableError"]
+
+
+class UnsolvableError(ValueError):
+    pass
+
 
 class BaseSolver(ABC):
     @property
@@ -29,7 +35,7 @@ class BaseSolver(ABC):
                     elapsed = time.perf_counter() - t0
                     if result.is_solved():
                         solved += 1
-                except ValueError:
+                except UnsolvableError:
                     elapsed = time.perf_counter() - t0
                 times.append(elapsed)
 
